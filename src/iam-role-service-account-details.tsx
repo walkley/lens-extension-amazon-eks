@@ -1,32 +1,14 @@
 import { Component, K8sApi } from "@k8slens/extensions";
-import { apiKubePrefix, isDevelopment } from "@k8slens/extensions/dist/src/common/vars";
-import { KubeJsonApiData, KubeJsonApi } from "@k8slens/extensions/dist/src/renderer/api/kube-json-api";
 import React from "react";
 import { computed, observable } from "mobx";
 import { observer } from "mobx-react";
 import { IAMRoleServiceAccount } from "./eks"
+import { tokenRequestApi, TokenRequest } from "./kube-token-request";
 
 const IRSA_ANNOTATION_PREFIX = "eks.amazonaws.com/role-arn=";
 const IAM_ROLE_ARN_REGEX = /^arn:(.+):iam::\d+:role\/(.+)/g;
 const IAM_ROLE_URL_PREFIX = "https://console.aws.amazon.com/iam/home#/roles/";
 const IAM_ROLE_CN_URL_PREFIX = "https://console.amazonaws.cn/iam/home?#/roles/";
-
-interface ServiceAccountToken extends KubeJsonApiData {
-  spec: {
-    audiences: [string],
-    expirationSeconds: number,
-    boundObjectRef: object
-  },
-  status: {
-    token: string,
-    expirationTimestamp: string
-  }
-}
-
-const apiKube = new KubeJsonApi({
-  apiBase: apiKubePrefix,
-  debug: isDevelopment,
-});
 
 @observer
 export class IRSADetails extends React.Component<Component.KubeObjectDetailsProps<K8sApi.ServiceAccount>> {
@@ -35,26 +17,6 @@ export class IRSADetails extends React.Component<Component.KubeObjectDetailsProp
   @computed get iamRole(): string {
     return this.props.object.getAnnotations().find(a => a.startsWith(IRSA_ANNOTATION_PREFIX))?.substr(IRSA_ANNOTATION_PREFIX.length);
   }
-  // @disposeOnUnmount
-  // checkIRSA = autorun(async () => {
-  //   this.irsaValid = false;
-  //   if (!this.IRSA) {
-  //     return;
-  //   }
-
-  //   console.log("before post...");
-  //   const res = await apiKube.post<ServiceAccountToken>(this.props.object.selfLink + '/token', {
-  //     data: {
-  //       spec: {
-  //         audiences: ["sts.amazonaws.com"],
-  //         expirationSeconds: 86400
-  //       }
-  //     }
-  //   });
-  //   console.log("SA token:", res.status.token);
-  //   this.irsaValid = await IAMRoleServiceAccount.isValideToken(this.IRSA, res.status.token);
-  //   console.log("checkIRSA result:", this.irsaValid);
-  // });
 
   generateIAMRoleURL(iamARN: string): string {
     const matches = [...iamARN.matchAll(IAM_ROLE_ARN_REGEX)]?.[0];
@@ -69,20 +31,22 @@ export class IRSADetails extends React.Component<Component.KubeObjectDetailsProp
   }
 
   checkIRSAStatus = () => {
+    //console.log("sa object", this.props.object);
+    //console.log("serviceAccountsApi", K8sApi.serviceAccountsApi);
+
     if (!this.iamRole) {
       console.log("invalid IAM Role", this);
       this.irsaStatus = "Invalid";
       return;
     }
 
-    apiKube.post<ServiceAccountToken>(this.props.object.selfLink + '/token', {
-      data: {
-        spec: {
-          audiences: ["sts.amazonaws.com"],
-          expirationSeconds: 86400
-        }
+    tokenRequestApi.createToken(this.props.object.getName(), this.props.object.getNs(), {
+      spec: {
+        audiences: ["sts.amazonaws.com"],
+        expirationSeconds: 86400
       }
-    }).then((res: ServiceAccountToken) => {
+    }).then((res: TokenRequest) => {
+      //console.log("ServiceAccountToken", res);
       IAMRoleServiceAccount.isValideToken(this.iamRole, res.status.token).then((valid: boolean) => {
         this.irsaStatus = "Valid";
       });
