@@ -13,14 +13,16 @@ export class IAM_OIDC_Feature extends ClusterFeature.Feature {
     const oidcIssuer: string = <string>cluster.metadata['eks-oidcIssuer'];
     const accountArn: string = <string>cluster.metadata['eks-accountArn'];
     const region: string = <string>cluster.metadata['eks-region'];
-    if (clusterName && oidcIssuer && accountArn && region) {
-      eksCluster = EKSCluster.ImportEKSCluster({ clusterName, oidcIssuer, accountArn, region });
+    const profile: string = <string>cluster.metadata['eks-profile'];
+    if (clusterName && oidcIssuer && accountArn && region && profile) {
+      eksCluster = EKSCluster.ImportEKSCluster({ clusterName, oidcIssuer, accountArn, region, profile });
     } else {
-      eksCluster = await EKSCluster.CreateEKSCluster(cluster.apiUrl);
+      eksCluster = await EKSCluster.CreateEKSCluster(cluster.apiUrl, cluster.kubeConfigPath);
       cluster.metadata['eks-clusterName'] = eksCluster.GetProp().clusterName;
       cluster.metadata['eks-oidcIssuer'] = eksCluster.GetProp().oidcIssuer;
       cluster.metadata['eks-accountArn'] = eksCluster.GetProp().accountArn;
       cluster.metadata['eks-region'] = eksCluster.GetProp().region;
+      cluster.metadata['eks-profile'] = eksCluster.GetProp().profile;
     }
 
     return eksCluster;
