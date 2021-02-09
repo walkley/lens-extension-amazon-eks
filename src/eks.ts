@@ -3,15 +3,13 @@ import { NodeHttpHandler, streamCollector } from "@aws-sdk/node-http-handler";
 import { EKSClient, ListClustersCommand, DescribeClusterCommand } from "@aws-sdk/client-eks";
 import { IAMClient, GetOpenIDConnectProviderCommand, DeleteOpenIDConnectProviderCommand, CreateOpenIDConnectProviderCommand } from "@aws-sdk/client-iam";
 import { STSClient, GetCallerIdentityCommand, AssumeRoleWithWebIdentityCommand } from "@aws-sdk/client-sts";
-import { KubeConfig } from "@kubernetes/client-node";
+import { Store } from "@k8slens/extensions";
 import * as tls from 'tls';
 import * as url from 'url';
-import fse from "fs-extra";
-import path from "path";
-import os from "os";
 
 const EKS_URL_REGREX = /https:\/\/\w+\.\w+\.([\w-]+)\.eks\.amazonaws\.com.*/g;
-const IAM_ARN_REGRES = /(arn:\w+:iam::\w+:).+/g;
+const IAM_ARN_REGRES = /(arn:[\w-]+:iam::\d+:).+/g;
+const EKS_PROP_ENTRY = 'eksProp';
 
 const Default_Client_Config = {
   logger: console,
@@ -29,12 +27,26 @@ export interface EKSClusterProp {
   profile: string;
 }
 
-function resolveTilde(filePath: string) {
-  if (filePath[0] === "~" && (filePath[1] === "/" || filePath.length === 1)) {
-    return filePath.replace("~", os.homedir());
+function guessIAMProfile(cluster: Store.Cluster): string {
+  
+  class _TempCluster extends Store.Cluster {
+    constructor(model: Store.ClusterModel) {
+      super(model);
+    }
+
+    guessProfile(): string {
+      const kc = this.getKubeconfig();
+      const args: [string] = kc.getUser(kc.getContextObject(cluster.contextName)?.user)?.exec?.args;
+      const profileIdx = args?.indexOf("--profile");
+      if (profileIdx !== undefined && profileIdx >= 0 && args.length > profileIdx + 1) {
+        return args[profileIdx + 1];
+      } else {
+        return "default";
+      }
+    }
   }
 
-  return filePath;
+  return (new _TempCluster(cluster)).guessProfile();
 }
 
 function findIntRootCACertificate(certificate: tls.DetailedPeerCertificate): tls.DetailedPeerCertificate {
@@ -77,44 +89,38 @@ export class EKSCluster {
   private constructor() {
   }
 
-  public static async CreateEKSCluster(apiUrl: string, kubeConfigPath: string): Promise<EKSCluster> {
-    const me = new EKSCluster();
-    await me.Setup(apiUrl, kubeConfigPath);
-    return me;
-  };
+  public static async retrieveEKSCluster(cluster: Store.Cluster): Promise<EKSCluster> {
+    const eksCluster = new EKSCluster();
+    eksCluster.eksProp = <EKSClusterProp>cluster.metadata[EKS_PROP_ENTRY];
+    if (!eksCluster.eksProp) {
+      await eksCluster.Setup(cluster);
+      cluster.metadata[EKS_PROP_ENTRY] = eksCluster.eksProp;
+    }
 
-  public static ImportEKSCluster(prop: EKSClusterProp) {
-    const me = new EKSCluster();
-    me.eksProp = prop;
-    return me;
+    return eksCluster;
   }
 
-  public GetProp() {
+  public get prop() {
     return this.eksProp;
   }
 
-  private async Setup(apiUrl: string, kubeConfigPath: string) {
-    const matches = [...apiUrl.matchAll(EKS_URL_REGREX)]?.[0];
+  private async Setup(cluster: Store.Cluster) {
+    // check eks api endpoint then get region from URL.
+    const matches = [...cluster.apiUrl.matchAll(EKS_URL_REGREX)]?.[0];
     if (matches?.length !== 2) {
-      console.error("Invalid EKS API URL: ", apiUrl);
+      console.error("Invalid EKS API URL: ", cluster.apiUrl);
       return;
     }
-
-    let profile = "default";
-    if (fse.pathExistsSync(kubeConfigPath)) {
-      const kc = new KubeConfig();
-      kc.loadFromFile(path.resolve(resolveTilde(kubeConfigPath)));
-      const args: [string] = kc.getCurrentUser()?.exec?.args;
-      const profileIdx = args?.indexOf("--profile");
-      if (profileIdx !== undefined && profileIdx >= 0 && args.length > profileIdx + 1) {
-        profile = args[profileIdx + 1];
-      }
-    }
     const region = matches[1];
+
+    // guess aws profile from exec parameters in kubeconfig.
+    const profile = guessIAMProfile(cluster);
+
+    // call eks api to get oidcIssurer and clustername by loop through eks cluster list the check its api url.
     let oidcIssuer = undefined;
     let clusterName = undefined;
     try {
-      const credentials = credentialDefaultProvider({profile});
+      const credentials = credentialDefaultProvider({ profile });
       const eksClient = new EKSClient({ ...Default_Client_Config, region, credentials });
       const listClustersCmd = new ListClustersCommand({});
       const clustersRes = await eksClient.send(listClustersCmd);
@@ -122,19 +128,19 @@ export class EKSCluster {
       //console.log(clustersRes.clusters.join('\n'));
       for (const name of clustersRes.clusters) {
         const descClusterRes = await eksClient.send(new DescribeClusterCommand({ name }));
-        if (descClusterRes?.cluster?.endpoint?.toUpperCase() === apiUrl.toUpperCase()) {
+        if (descClusterRes?.cluster?.endpoint?.toUpperCase() === cluster.apiUrl.toUpperCase()) {
           clusterName = name;
           oidcIssuer = descClusterRes.cluster?.identity?.oidc?.issuer;
           break;
         }
       };
+
+      const stsClient = new STSClient({ ...Default_Client_Config, region, credentials });
+      const accountArn = (await stsClient.send(new GetCallerIdentityCommand({})))?.Arn;
+      this.eksProp = { clusterName, oidcIssuer, accountArn, region, profile };
     } catch (err) {
       console.error(err);
     }
-
-    const stsClient = new STSClient({ ...Default_Client_Config, region });
-    const accountArn = (await stsClient.send(new GetCallerIdentityCommand({})))?.Arn;
-    this.eksProp = { clusterName, oidcIssuer, accountArn, region, profile };
   }
 
   private GetOidcIssuerUrl(): string {
@@ -149,6 +155,8 @@ export class EKSCluster {
     if (matches?.length === 2 && issuerUrl) {
       const iamPrefix = matches[1];
       return `${iamPrefix}oidc-provider/${issuerUrl}`;
+    } else {
+      console.error("Failed to GetOIDCProviderArn:", matches, issuerUrl);
     }
   }
 
@@ -163,11 +171,11 @@ export class EKSCluster {
     const issuerUrl = this.GetOidcIssuerUrl();
     if (OpenIDConnectProviderArn && issuerUrl) {
       try {
-        const credentials = credentialDefaultProvider({profile: this.eksProp.profile});
+        const credentials = credentialDefaultProvider({ profile: this.eksProp.profile });
         const iamClient = new IAMClient({ ...Default_Client_Config, region: this.eksProp.region, credentials });
         const res = await iamClient.send(new GetOpenIDConnectProviderCommand({ OpenIDConnectProviderArn }));
         if (res.Url === issuerUrl) {
-          console.log("OIDCProvider Assosiated: ", issuerUrl);
+          //console.log("OIDCProvider Assosiated: ", issuerUrl);
           return true;
         }
       } catch (err) {
@@ -182,7 +190,7 @@ export class EKSCluster {
     const OpenIDConnectProviderArn = this.GetOIDCProviderArn();
     const issuerUrl = this.GetOidcIssuerUrl();
     if (OpenIDConnectProviderArn && issuerUrl) {
-      const credentials = credentialDefaultProvider({profile: this.eksProp.profile});
+      const credentials = credentialDefaultProvider({ profile: this.eksProp.profile });
       const iamClient = new IAMClient({ ...Default_Client_Config, region: this.eksProp.region, credentials });
       const res = await iamClient.send(new DeleteOpenIDConnectProviderCommand({ OpenIDConnectProviderArn }));
       if (res) {
@@ -196,7 +204,7 @@ export class EKSCluster {
     const OpenIDConnectProviderArn = this.GetOIDCProviderArn();
     const issuerUrl = this.GetOidcIssuerUrl();
     if (OpenIDConnectProviderArn && issuerUrl) {
-      const credentials = credentialDefaultProvider({profile: this.eksProp.profile});
+      const credentials = credentialDefaultProvider({ profile: this.eksProp.profile });
       const iamClient = new IAMClient({ ...Default_Client_Config, region: this.eksProp.region, credentials });
       const thumbprint = await downloadThumbprint(this.eksProp.oidcIssuer);
       console.log("thumbprint", thumbprint);

@@ -1,37 +1,17 @@
 import { ClusterFeature, Store } from "@k8slens/extensions";
 import { EKSCluster } from "./eks";
 
-export class IAM_OIDC_Feature extends ClusterFeature.Feature {
+export class IamOidcFeature extends ClusterFeature.Feature {
   constructor() {
     super();
-    console.log("IAM_OIDC_Feature constructed.");
-  }
-
-  private async retrieveEKSCluster(cluster: Store.Cluster): Promise<EKSCluster> {
-    let eksCluster: EKSCluster;
-    const clusterName: string = <string>cluster.metadata['eks-clusterName'];
-    const oidcIssuer: string = <string>cluster.metadata['eks-oidcIssuer'];
-    const accountArn: string = <string>cluster.metadata['eks-accountArn'];
-    const region: string = <string>cluster.metadata['eks-region'];
-    const profile: string = <string>cluster.metadata['eks-profile'];
-    if (clusterName && oidcIssuer && accountArn && region && profile) {
-      eksCluster = EKSCluster.ImportEKSCluster({ clusterName, oidcIssuer, accountArn, region, profile });
-    } else {
-      eksCluster = await EKSCluster.CreateEKSCluster(cluster.apiUrl, cluster.kubeConfigPath);
-      cluster.metadata['eks-clusterName'] = eksCluster.GetProp().clusterName;
-      cluster.metadata['eks-oidcIssuer'] = eksCluster.GetProp().oidcIssuer;
-      cluster.metadata['eks-accountArn'] = eksCluster.GetProp().accountArn;
-      cluster.metadata['eks-region'] = eksCluster.GetProp().region;
-      cluster.metadata['eks-profile'] = eksCluster.GetProp().profile;
-    }
-
-    return eksCluster;
+    //console.log("IAM_OIDC_Feature constructed.");
   }
 
   async install(cluster: Store.Cluster): Promise<void> {
     //super.applyResources(cluster, path.join(__dirname, "../resources/"));
-    const eksCluster = await this.retrieveEKSCluster(cluster);
+    const eksCluster = await EKSCluster.retrieveEKSCluster(cluster);
     await eksCluster.createAssosiatedOIDCProvider();
+    this.status.installed = true;
   }
 
   async upgrade(cluster: Store.Cluster): Promise<void> {
@@ -41,20 +21,15 @@ export class IAM_OIDC_Feature extends ClusterFeature.Feature {
   async updateStatus(cluster: Store.Cluster): Promise<ClusterFeature.FeatureStatus> {
     //this.status.installed = false;
     this.status.canUpgrade = false;
-
-    // const cred = await credentialDefaultProvider()();
-    // console.log("AK:", cred.accessKeyId)
-    // console.log("updateStatus, cluster URL:", cluster.apiUrl);
-    const eksCluster = await this.retrieveEKSCluster(cluster);
+    const eksCluster = await EKSCluster.retrieveEKSCluster(cluster);
     this.status.installed = await eksCluster.hasAssosiatedOIDCProvider();
     return this.status;
   }
 
   async uninstall(cluster: Store.Cluster): Promise<void> {
-    //const podApi = K8sApi.forCluster(cluster, K8sApi.Pod);
-    //await podApi.delete({name: "example-pod", namespace: "default"});
-    const eksCluster = await this.retrieveEKSCluster(cluster);
+    const eksCluster = await EKSCluster.retrieveEKSCluster(cluster);
     await eksCluster.deleteAssosiatedOIDCProvider();
+    this.status.installed = false;
   }
 }
 
