@@ -3,9 +3,15 @@ import { NodeHttpHandler, streamCollector } from "@aws-sdk/node-http-handler";
 import { EKSClient, ListClustersCommand, DescribeClusterCommand } from "@aws-sdk/client-eks";
 import { IAMClient, GetOpenIDConnectProviderCommand, DeleteOpenIDConnectProviderCommand, CreateOpenIDConnectProviderCommand } from "@aws-sdk/client-iam";
 import { STSClient, GetCallerIdentityCommand, AssumeRoleWithWebIdentityCommand } from "@aws-sdk/client-sts";
+import { EC2Client, DescribeRegionsCommand } from "@aws-sdk/client-ec2";
 import { Store } from "@k8slens/extensions";
+import { app, remote } from "electron";
 import * as tls from 'tls';
 import * as url from 'url';
+import path from "path";
+import { v4 as uuid } from "uuid";
+import { ensureDirSync, writeFileSync } from "fs-extra";
+import yaml from "js-yaml";
 
 const EKS_URL_REGREX = /https:\/\/\w+\.\w+\.([\w-]+)\.eks\.amazonaws\.com.*/g;
 const IAM_ARN_REGRES = /(arn:[\w-]+:iam::\d+:).+/g;
@@ -27,8 +33,95 @@ export interface EKSClusterProp {
   profile: string;
 }
 
+export async function getRegions(profile: string, region: string): Promise<string[]> {
+  const credentials = credentialDefaultProvider({ profile });
+  const ec2Client = new EC2Client({ ...Default_Client_Config, region, credentials });
+  const describeRegionsCmd = new DescribeRegionsCommand({});
+  const regionsRes = await ec2Client.send(describeRegionsCmd);
+  return regionsRes.Regions.map(region => { return region.RegionName });
+}
+
+export async function getClusters(profile: string, region: string): Promise<string[]> {
+  const credentials = credentialDefaultProvider({ profile });
+  const eksClient = new EKSClient({ ...Default_Client_Config, region, credentials });
+  const listClustersCmd = new ListClustersCommand({});
+  const clustersRes = await eksClient.send(listClustersCmd);
+  return clustersRes.clusters;
+}
+
+function embedCustomKubeConfig(clusterId: Store.ClusterId, kubeConfig: string): string {
+  const filePath = path.resolve((app || remote.app).getPath("userData"), "kubeconfigs", clusterId);
+  ensureDirSync(path.dirname(filePath));
+  writeFileSync(filePath, kubeConfig, { mode: 0o600 });
+  return filePath;
+}
+
+export async function addCluster(profile: string, region: string, clusterName: string, alias?: string): Promise<string> {
+  const credentials = credentialDefaultProvider({ profile });
+  const eksClient = new EKSClient({ ...Default_Client_Config, region, credentials });
+  const res = await eksClient.send(new DescribeClusterCommand({ name: clusterName }));
+  if (res.$metadata?.httpStatusCode === 200) {
+    const endpoint = res.cluster?.endpoint;
+    const caData = res.cluster?.certificateAuthority?.data;
+    const currentContext = `AmazonEKS_${clusterName}`;
+
+    const kubeConfig = {
+      apiVersion: "v1",
+      kind: "Config",
+      preferences: {},
+      "current-context": currentContext,
+      clusters: [{
+        name: clusterName,
+        cluster: {
+          "certificate-authority-data": caData,
+          server: endpoint,
+          "insecure-skip-tls-verify": false
+        }
+      }],
+      contexts: [{
+        name: currentContext,
+        context: {
+          cluster: clusterName,
+          user: `user@${clusterName}`
+        }
+      }],
+      users: [{
+        name: `user@${clusterName}`,
+        user: {
+          exec: {
+            apiVersion: "client.authentication.k8s.io/v1alpha1",
+            args: ["eks", "get-token", "--cluster-name", clusterName, "--region", region, "--profile", profile],
+            command: "aws",
+            env: [{
+              name: "AWS_STS_REGIONAL_ENDPOINTS",
+              value: "regional"
+            }]
+          }
+        }
+      }]
+    };
+
+    // skipInvalid: true makes dump ignore undefined values
+    const kubeConfigYaml = yaml.dump(kubeConfig, { skipInvalid: true });
+    const clusterId = uuid();
+    const kubeConfigPath = embedCustomKubeConfig(clusterId, kubeConfigYaml);
+    const clusterModel = {
+      id: clusterId,
+      kubeConfigPath,
+      workspace: Store.workspaceStore.currentWorkspaceId,
+      contextName: currentContext,
+      preferences: {
+        clusterName: (alias || currentContext)
+      },
+    };
+    Store.clusterStore.addCluster(clusterModel);
+    Store.clusterStore.activeClusterId = clusterModel.id;
+    return clusterModel.id;
+  }
+}
+
 function guessIAMProfile(cluster: Store.Cluster): string {
-  
+
   class _TempCluster extends Store.Cluster {
     constructor(model: Store.ClusterModel) {
       super(model);
@@ -36,7 +129,7 @@ function guessIAMProfile(cluster: Store.Cluster): string {
 
     guessProfile(): string {
       const kc = this.getKubeconfig();
-      const args: [string] = kc.getUser(kc.getContextObject(cluster.contextName)?.user)?.exec?.args;
+      const args: [string] = kc.getUser(kc.getContextObject(this.contextName)?.user)?.exec?.args;
       const profileIdx = args?.indexOf("--profile");
       if (profileIdx !== undefined && profileIdx >= 0 && args.length > profileIdx + 1) {
         return args[profileIdx + 1];
@@ -122,11 +215,10 @@ export class EKSCluster {
     try {
       const credentials = credentialDefaultProvider({ profile });
       const eksClient = new EKSClient({ ...Default_Client_Config, region, credentials });
-      const listClustersCmd = new ListClustersCommand({});
-      const clustersRes = await eksClient.send(listClustersCmd);
+      const clusters = await getClusters(profile, region);
       //console.log("eks config:", this.eksClient.config);
       //console.log(clustersRes.clusters.join('\n'));
-      for (const name of clustersRes.clusters) {
+      for (const name of clusters) {
         const descClusterRes = await eksClient.send(new DescribeClusterCommand({ name }));
         if (descClusterRes?.cluster?.endpoint?.toUpperCase() === cluster.apiUrl.toUpperCase()) {
           clusterName = name;
@@ -160,20 +252,19 @@ export class EKSCluster {
     }
   }
 
-
-
   /**
    * Check if this EKS cluster has associated IAM OIDC provider.
    * by comparing searching IAM OIDC Provider with matched OIDC issuer.
    */
   async hasAssosiatedOIDCProvider(): Promise<boolean> {
-    const OpenIDConnectProviderArn = this.GetOIDCProviderArn();
+    const oidcProviderArn = this.GetOIDCProviderArn();
     const issuerUrl = this.GetOidcIssuerUrl();
-    if (OpenIDConnectProviderArn && issuerUrl) {
+    if (oidcProviderArn && issuerUrl) {
       try {
         const credentials = credentialDefaultProvider({ profile: this.eksProp.profile });
+        console.log("credentials: ", credentials);
         const iamClient = new IAMClient({ ...Default_Client_Config, region: this.eksProp.region, credentials });
-        const res = await iamClient.send(new GetOpenIDConnectProviderCommand({ OpenIDConnectProviderArn }));
+        const res = await iamClient.send(new GetOpenIDConnectProviderCommand({ OpenIDConnectProviderArn: oidcProviderArn }));
         if (res.Url === issuerUrl) {
           //console.log("OIDCProvider Assosiated: ", issuerUrl);
           return true;

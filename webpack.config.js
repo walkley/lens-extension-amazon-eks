@@ -43,6 +43,10 @@ module.exports = [
           use: 'ts-loader',
           exclude: /node_modules/,
         },
+        {
+          test: /\.svg$/,
+          loader: 'raw-loader'
+        }
       ],
     },
     externals: [
@@ -64,6 +68,12 @@ module.exports = [
     node: {
       __dirname: false,
       __filename: false
+    },
+    stats: {
+      // Examine all modules
+      maxModules: Infinity,
+      // Display bailout reasons
+      optimizationBailout: true,
     }
   },
 ];

@@ -1,6 +1,7 @@
 import { LensRendererExtension, Component, K8sApi, Store} from "@k8slens/extensions";
 import { IRSADetails } from "./src/iam-role-service-account-details"
 import { IamOidcFeature } from "./src/iam-oidc-provider-feature"
+import { AddEksClusterPage, AddEksClusterIcon } from "./src/add-eks-cluster"
 //import { EksClusterSettingsPage, EksIcon } from "./src/eks-cluster-settings"
 import React from "react"
 
@@ -13,6 +14,26 @@ export default class EKSExtension extends LensRendererExtension {
     const matches = [...cluster.apiUrl.matchAll(EKS_URL_REGREX)]?.[0];
     return Promise.resolve(matches?.length === 2);
   }
+
+  globalPages = [
+    {
+      id: "add-eks-cluster",
+      components: {
+        Page: () => <AddEksClusterPage extension={this}/>,
+      }
+    }
+  ];
+
+  globalPageMenus = [
+    {
+      target: { pageId: "add-eks-cluster" },
+      title: "Add Amazon EKS Cluster",
+      components: {
+        Icon: AddEksClusterIcon,
+      }
+    },
+  ];
+
 
   // clusterPages = [
   //   {
