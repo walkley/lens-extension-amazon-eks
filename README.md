@@ -1,5 +1,7 @@
 # Lens Extension for Amazon EKS
 
+<a href="https://github.com/walkley/lens-extension-amazon-eks"><img alt="GitHub Actions status" src="https://github.com/walkley/lens-extension-amazon-eks/workflows/Build%20testing/badge.svg"></a>
+
 Lens extension for Amazon EKS that adds following features:
 
 *  Cluster feature: Associate IAM OIDC Provider
