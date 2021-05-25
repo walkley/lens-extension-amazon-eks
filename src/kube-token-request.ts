@@ -26,7 +26,7 @@ class TokenRequestApi extends K8sApi.KubeApi<TokenRequest> {
     //console.log("apiUrl", apiUrl);
     return this.request
       .post(apiUrl, { data })
-      .then(this.parseResponse);
+      .then(this.parseResponse) as Promise<TokenRequest>;
   }
 }
 

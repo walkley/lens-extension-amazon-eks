@@ -2,10 +2,10 @@ import { Component, K8sApi } from "@k8slens/extensions";
 import React from "react";
 import { computed, observable } from "mobx";
 import { observer } from "mobx-react";
-import { IAMRoleServiceAccount } from "./eks"
-import { tokenRequestApi, TokenRequest } from "./kube-token-request";
+import { IAMRoleServiceAccount } from "../eks"
+import { tokenRequestApi, TokenRequest } from "../kube-token-request";
+import { IRSARole } from "./irsa-store";
 
-const IRSA_ANNOTATION_PREFIX = "eks.amazonaws.com/role-arn=";
 const IAM_ROLE_ARN_REGEX = /^arn:(.+):iam::\d+:role\/(.+)/g;
 const IAM_ROLE_URL_PREFIX = "https://console.aws.amazon.com/iam/home#/roles/";
 const IAM_ROLE_CN_URL_PREFIX = "https://console.amazonaws.cn/iam/home?#/roles/";
@@ -15,7 +15,7 @@ export class IRSADetails extends React.Component<Component.KubeObjectDetailsProp
   @observable irsaStatus = "Unknown";
 
   @computed get iamRole(): string {
-    return this.props.object.getAnnotations().find(a => a.startsWith(IRSA_ANNOTATION_PREFIX))?.substr(IRSA_ANNOTATION_PREFIX.length);
+    return IRSARole(this.props.object);
   }
 
   generateIAMRoleURL(iamARN: string): string {

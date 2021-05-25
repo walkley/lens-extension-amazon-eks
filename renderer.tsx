@@ -1,8 +1,9 @@
 import { LensRendererExtension, Component, K8sApi, Store} from "@k8slens/extensions";
-import { IRSADetails } from "./src/iam-role-service-account-details"
+import { IRSADetails } from "./src/irsa/irsa-details"
 import { IamOidcFeature } from "./src/iam-oidc-provider-feature"
 import { AddEksClusterPage, AddEksClusterIcon } from "./src/add-eks-cluster"
-//import { EksClusterSettingsPage, EksIcon } from "./src/eks-cluster-settings"
+import { EksClusterSettingsPage, EksIcon } from "./src/eks-cluster-settings"
+import { IAMRoleforServiceAccountPage } from "./src/irsa/irsa-page";
 import React from "react"
 
 
@@ -35,32 +36,47 @@ export default class EKSExtension extends LensRendererExtension {
   ];
 
 
-  // clusterPages = [
-  //   {
-  //     id: "eks-settings",
-  //     components: {
-  //       Page: () => <EksClusterSettingsPage cluster={Store.clusterStore.activeCluster}/>,
-  //     }
-  //   }
-  // ]
+  clusterPages = [
+    {
+      id: "eks-settings",
+      components: {
+        Page: () => <EksClusterSettingsPage cluster={Store.clusterStore.activeCluster}/>,
+      }
+    },
+    {
+      id: "irsa",
+      components: {
+        Page: () => <IAMRoleforServiceAccountPage extension={this} />,
+        //MenuIcon: CertificateIcon,
+      }
+    }
+  ]
 
-  // clusterPageMenus = [
-  //   {
-  //     id: "eks",
-  //     title: "Amazon EKS",
-  //     components: {
-  //       Icon: EksIcon,
-  //     }
-  //   },
-  //   {
-  //     parentId: "eks",
-  //     target: { pageId: "eks-settings" },
-  //     title: "EKS Cluster Settings",
-  //     components: {
-  //       Icon: EksIcon,
-  //     }
-  //   }
-  // ]
+  clusterPageMenus = [
+    {
+      id: "eks",
+      title: "Amazon EKS",
+      components: {
+        Icon: EksIcon,
+      }
+    },
+    {
+      parentId: "eks",
+      target: { pageId: "eks-settings" },
+      title: "EKS Cluster Settings",
+      components: {
+        Icon: EksIcon,
+      }
+    },
+    {
+      parentId: "eks",
+      target: { pageId: "irsa" },
+      title: "IAM Role for Service Account",
+      components: {
+        Icon: EksIcon,
+      }
+    }
+  ]
 
   clusterFeatures = [
     {

@@ -42,6 +42,10 @@ npm run dev
 ## Test
 
 Open Lens application and navigate to a cluster...
+```sh
+cd %USERPROFILE%\.k8slens\extensions
+mklink /D lens-extension-amazon-eks \\wsl$\Ubuntu-20.04\home\walkley\lens-extension-amazon-eks
+```
 
 ## Uninstall
 
