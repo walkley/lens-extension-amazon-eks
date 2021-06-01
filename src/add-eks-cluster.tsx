@@ -74,6 +74,7 @@ export class AddEksClusterPage extends React.Component<{ extension: LensRenderer
       getClusters(this.profile, this.region).then((value: string[]) => { 
         this.clustersList = value;
         this.cluster = this.clustersList.length > 0 ? this.clustersList[0] : "";
+        this.alias = this.cluster;
       });
     }
   }
