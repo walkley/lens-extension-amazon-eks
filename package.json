@@ -1,6 +1,6 @@
 {
   "name": "lens-extension-amazon-eks",
-  "version": "0.0.1",
+  "version": "0.0.3",
   "author": "Walkley He <walkleyhe@gmail.com>",
   "maintainers": [
     {
