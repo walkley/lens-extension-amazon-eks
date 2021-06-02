@@ -40,3 +40,9 @@ jobs:
           asset_path: ./${{ steps.pack_tarball.outputs.tar_filename }}
           asset_name: lens-extension-amazon-eks.tgz
           asset_content_type: application/zip
+      - name: Publish Package
+        id: publish-package
+        uses: JS-DevTools/npm-publish@v1
+        with:
+          token: ${{ secrets.NPM_TOKEN }}
+          tag: ${{ github.ref }}
