@@ -2,7 +2,7 @@
 
 <a href="https://github.com/walkley/lens-extension-amazon-eks"><img alt="GitHub Actions status" src="https://github.com/walkley/lens-extension-amazon-eks/workflows/Build%20testing/badge.svg"></a>
 
-Lens extension for Amazon EKS that adds following features:
+[Lens](https://github.com/lensapp/lens) extension for Amazon EKS that adds following features:
 
 *  Create Amazon EKS clusters
 *  Cluster feature: Associate IAM OIDC Provider
