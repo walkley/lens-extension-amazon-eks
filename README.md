@@ -4,22 +4,23 @@
 
 Lens extension for Amazon EKS that adds following features:
 
+*  Create Amazon EKS clusters
 *  Cluster feature: Associate IAM OIDC Provider
 *  Service Account detail page: IAM Role for Service Account
 
-## Install
+## Demo
 
-```sh
-mkdir -p ~/.k8slens/extensions
-git clone https://github.com/walkley/lens-extension-amazon-eks.git
-ln -s $(pwd)/lens-extension-amazon-eks ~/.k8slens/extensions/lens-extension-amazon-eks
-```
+https://user-images.githubusercontent.com/6355087/120655946-c0efd580-c4b5-11eb-8d48-6218dce83146.mp4
+
 
 ## Build
 
 To build the extension you can use `make` or run the `npm` commands manually:
 
 ```sh
+mkdir -p ~/.k8slens/extensions
+git clone https://github.com/walkley/lens-extension-amazon-eks.git
+ln -s $(pwd)/lens-extension-amazon-eks ~/.k8slens/extensions/lens-extension-amazon-eks
 cd lens-extension-amazon-eks
 make build
 ```
