@@ -310,11 +310,10 @@ export class EKSCluster {
       }
     }
   }
-}
 
-export class IAMRoleServiceAccount {
-  static async isValideToken(roleArn: string, token: string): Promise<boolean> {
-    const stsClient = new STSClient({ ...Default_Client_Config, region: 'us-east-1' });
+  async isValideToken(roleArn: string, token: string): Promise<boolean> {
+    const credentials = credentialDefaultProvider({ profile: this.eksProp.profile });
+    const stsClient = new STSClient({ ...Default_Client_Config, region: this.eksProp.region, credentials });
     const res = await stsClient.send(new AssumeRoleWithWebIdentityCommand({
       RoleArn: roleArn,
       RoleSessionName: "irsa-test-lens",

@@ -40,7 +40,7 @@ export default class EKSExtension extends LensRendererExtension {
     {
       id: "eks-settings",
       components: {
-        Page: () => <EksClusterSettingsPage cluster={Store.clusterStore.activeCluster}/>,
+        Page: () => <EksClusterSettingsPage cluster={Store.clusterStore.getById(Store.workspaceStore.currentWorkspace.activeClusterId)}/>,
       }
     },
     {

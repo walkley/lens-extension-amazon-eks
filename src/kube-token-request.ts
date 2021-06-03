@@ -24,9 +24,7 @@ class TokenRequestApi extends K8sApi.KubeApi<TokenRequest> {
   async createToken(name: string, namespace: string, data?: Partial<TokenRequest>): Promise<TokenRequest> {
     const apiUrl = `${this.getUrl({ name, namespace })}/token`;
     //console.log("apiUrl", apiUrl);
-    return this.request
-      .post(apiUrl, { data })
-      .then(this.parseResponse) as Promise<TokenRequest>;
+    return this.request.post(apiUrl, { data });
   }
 }
 

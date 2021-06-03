@@ -1,8 +1,8 @@
-import { Component, K8sApi } from "@k8slens/extensions";
+import { Component, K8sApi, Store } from "@k8slens/extensions";
 import React from "react";
 import { computed, observable } from "mobx";
 import { observer } from "mobx-react";
-import { IAMRoleServiceAccount } from "../eks"
+import { EKSCluster } from "../eks"
 import { tokenRequestApi, TokenRequest } from "../kube-token-request";
 import { IRSARole } from "./irsa-store";
 
@@ -18,7 +18,7 @@ export class IRSADetails extends React.Component<Component.KubeObjectDetailsProp
     return IRSARole(this.props.object);
   }
 
-  generateIAMRoleURL(iamARN: string): string {
+  private generateIAMRoleURL(iamARN: string): string {
     const matches = [...iamARN.matchAll(IAM_ROLE_ARN_REGEX)]?.[0];
     if (matches?.length !== 3)
       return '';
@@ -30,28 +30,26 @@ export class IRSADetails extends React.Component<Component.KubeObjectDetailsProp
       return '';
   }
 
-  checkIRSAStatus = () => {
-    //console.log("sa object", this.props.object);
-    //console.log("serviceAccountsApi", K8sApi.serviceAccountsApi);
-
+  private checkIRSAStatuss = async () => {
     if (!this.iamRole) {
       console.log("invalid IAM Role", this);
       this.irsaStatus = "Invalid";
       return;
     }
 
-    tokenRequestApi.createToken(this.props.object.getName(), this.props.object.getNs(), {
+    const tokenRequest = await tokenRequestApi.createToken(this.props.object.getName(), this.props.object.getNs(), {
       spec: {
         audiences: ["sts.amazonaws.com"],
         expirationSeconds: 86400
       }
-    }).then((res: TokenRequest) => {
-      //console.log("ServiceAccountToken", res);
-      IAMRoleServiceAccount.isValideToken(this.iamRole, res.status.token).then((valid: boolean) => {
-        this.irsaStatus = "Valid";
-      });
     });
-  };
+
+    const cluster = Store.clusterStore.getById(Store.workspaceStore.currentWorkspace.activeClusterId);
+    const eksCluster = await EKSCluster.retrieveEKSCluster(cluster);
+    if (await eksCluster.isValideToken(this.iamRole, tokenRequest.status.token)) {
+      this.irsaStatus = "Valid";
+    }
+  }
 
   render() {
     const iamRole = this.iamRole;
@@ -70,7 +68,7 @@ export class IRSADetails extends React.Component<Component.KubeObjectDetailsProp
             <Component.Icon
               small material="fact_check"
               tooltip="Show value"
-              onClick={this.checkIRSAStatus}
+              onClick={this.checkIRSAStatuss}
             />
           </div>
         </Component.DrawerItem>
